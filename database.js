@@ -4,6 +4,7 @@ const sqlite3 = require('sqlite3').verbose();
 // Mengambil nama file DB dari .env (dengan fallback)
 const DB_MOVIES = process.env.DB_MOVIES || "movies.db";
 const DB_DIRECTORS = process.env.DB_DIRECTORS || "directors.db";
+const DB_USERS = process.env.DB_USERS || "users.db";
 
 // Koneksi ke database movies || movies.db
 const dbMovies = new sqlite3.Database(DB_MOVIES, (err) => {
@@ -26,6 +27,26 @@ const dbMovies = new sqlite3.Database(DB_MOVIES, (err) => {
         dbMovies.run(insert, ["King Kong", "Peter Jackson", 2005]);
         dbMovies.run(insert, ["Spider-Man", "Sam Raimi", 2002]);
         dbMovies.run(insert, ["Aku dan Santriwati", "Firman Ardiansyah", 2025]);
+      }
+    });
+  }
+});
+
+// Menambahkan tabel users
+const dbUsers = new sqlite3.Database(DB_USERS, (err) => {
+  if (err) {
+    console.error("Error connect to users.db:", err.message);
+    throw err;
+  } else {
+    console.log("Connected to users.db");
+
+    dbUsers.run(`CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL, 
+      password TEXT NOT NULL 
+    )`, (err) => {
+      if (!err) {
+        console.log("Table 'users' created.");
       }
     });
   }
@@ -56,4 +77,4 @@ const dbDirectors = new sqlite3.Database(DB_DIRECTORS, (err) => {
 });
 
 // Export dua koneksi database
-module.exports = { dbMovies, dbDirectors };
+module.exports = { dbMovies, dbDirectors, dbUsers };

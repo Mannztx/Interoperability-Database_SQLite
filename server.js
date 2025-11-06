@@ -2,9 +2,15 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const {dbMovies, dbDirectors} = require('./database.js');
+const {dbMovies, dbDirectors, dbUsers} = require('./database.js');
 const app = express();
 const port = process.env.PORT || 3030;
+// Impor bcrypt dan jwt (dependencies keamanan)
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const JWT_SECRET = process.env.JWT_SECRET;
+// Impor middleware
+const authenticateToken = require('./middleware/authMiddleware.js');
 // let idSeq = 4;
 
 // Middleware
@@ -40,6 +46,64 @@ app.get('/status', (req, res) => {
   });
 });
 
+// Menambahkan route baru untuk registrasi
+app.post('/auth/register', (req, res) => {
+  const {username, password} = req.body;
+  if (!username || !password || password.length < 6) {
+    return res.status(400).json({error: 'Username dan Password wajib diisi'});
+  }
+
+  bcrypt.hash(password, 10, (err, hashedPassword) => {
+    if (err) {
+      console.error("Error hashing:", err);
+      return res.status(500).json({error: 'Gagal memproses pendaftaran'});
+    }
+
+    const sql = 'INSERT INTO users (username, password) VALUES (?, ?)';
+    const params = [username.toLowerCase(), hashedPassword];
+
+    dbUsers.run(sql, params, function(err) {
+      if (err) {
+        if (err.message.includes('UNIQUE constraint')) {
+          return res.status(409).json({error: 'Username sudah digunakan'});
+        }
+        console.error("Error inserting user:", err);
+        return res.status(500).json({error: 'Gagal menyimpan pengguna'});
+      }
+      res.status(201).json({message: 'Registrasi berhasil', userId: this.lastID});
+    });
+  });
+});
+
+// Validasi kredensial dan mengembalikan
+app.post('/auth/login', (req, res) => {
+  const {username, password} = req.body;
+  if (!username || !password) {
+    return res.status(400).json({error: 'Username dan Password wajib diisi'});
+  }
+  const sql = 'SELECT * FROM users WHERE username = ?';
+  dbUsers.get(sql, [username.toLowerCase()], (err, user) => {
+    if (err || !user) {
+      return res.status(401).json({error: 'Kredensial tidak valid'});
+    }
+
+    bcrypt.compare(password, user.password, (err, isMatch) => {
+      if (err || !isMatch) {
+        return res.status(401).json({error: 'Kredensial tidak valid'});
+      }
+      const payload = {user: {id: user.id, username: user.username}};
+
+      jwt.sign(payload, JWT_SECRET, {expiresIn: '1h'}, (err, token) => {
+        if (err) {
+          console.error("Error signing token:", err);
+          return res.status(500).json({error: 'Gagal membuat token'});
+        }
+        res.json({message: 'Login berhasil', token: token});
+      });
+    });
+  });
+});
+
 // Melihat semua daftar film
 app.get('/movies', (req, res) => {
   const sql = "SELECT * FROM movies ORDER BY id ASC";
@@ -60,7 +124,7 @@ app.get('/movies/:id', (req, res) => {
 });
 
 // Menambah data film baru
-app.post('/movies', (req, res) => {
+app.post('/movies', authenticateToken, (req, res) => {
   const {title, director, year} = req.body;
   if (!title || !director || !year) {
     return res.status(400).json({error: "title, director, year is required"});
@@ -73,7 +137,7 @@ app.post('/movies', (req, res) => {
 });
 
 // Memperbarui data film dengan id tertentu
-app.put("/movies/:id", (req, res) => {
+app.put('/movies/:id', authenticateToken, (req, res) => {
   const {id} = req.params;
   const {title, director, year} = req.body;
   dbMovies.run(
@@ -89,7 +153,7 @@ app.put("/movies/:id", (req, res) => {
 });
 
 // Menghapus data film dengan id tertentu
-app.delete("/movies/:id", (req, res) => {
+app.delete('/movies/:id', authenticateToken, (req, res) => {
   const {id} = req.params;
   dbMovies.run("DELETE FROM movies WHERE id = ?", req.params.id, function (err) {
     if (err) return res.status(500).json({error: err.message});
@@ -117,7 +181,7 @@ app.get("/directors/:id", (req, res) => {
 });
 
 // Menambah data sutradara
-app.post("/directors", (req, res) => {
+app.post("/directors", authenticateToken, (req, res) => {
   const {name, birthYear} = req.body;
   dbDirectors.run(
     "INSERT INTO directors (name, birthYear) VALUES (?, ?)",
@@ -130,7 +194,7 @@ app.post("/directors", (req, res) => {
 });
 
 // Memperbarui data sutradara dengan id tertentu
-app.put("/directors/:id", (req, res) => {
+app.put("/directors/:id", authenticateToken, (req, res) => {
   const {id} = req.params;
   const {name, birthYear} = req.body;
   dbDirectors.run(
@@ -144,7 +208,7 @@ app.put("/directors/:id", (req, res) => {
 });
 
 // Menghapus data sutradara dengan id tertentu
-app.delete("/directors/:id", (req, res) => {
+app.delete("/directors/:id", authenticateToken, (req, res) => {
   const {id} = req.params;
   dbDirectors.run("DELETE FROM directors WHERE id = ?", req.params.id, function (err) {
     if (err) return res.status(500).json({error: err.message});
